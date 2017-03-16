@@ -117,15 +117,17 @@ public class Scheduler {
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		switchProcess();
+		switchProcess(false);
 		
 	}
 
-	private void switchProcess() {
+	private void switchProcess(Boolean pFinished) {
+		if(!pFinished){
+			int oldPID = this.runningProcess;
+			this.processQueue.add(oldPID);		
+		}
 		
 		if(processQueue.size() != 0){
-			int oldPID = this.runningProcess;
-			this.processQueue.add(oldPID);
 			int newPID = this.processQueue.remove();
 			processExecution.switchToProcess(newPID);
 			this.runningProcess = newPID;
@@ -143,7 +145,7 @@ public class Scheduler {
 	 */
 	public void processFinished(int processID) {
 
-		switchProcess();
+		switchProcess(true);
 		/**
 		 * Add scheduling code here
 		 */
