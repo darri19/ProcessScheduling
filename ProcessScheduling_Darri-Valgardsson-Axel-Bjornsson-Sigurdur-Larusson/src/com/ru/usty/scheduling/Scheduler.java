@@ -1,6 +1,9 @@
 package com.ru.usty.scheduling;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedList;
+import java.util.PriorityQueue;
 import java.util.Queue;
 
 import com.ru.usty.scheduling.process.ProcessExecution;
@@ -11,6 +14,11 @@ public class Scheduler {
 	Policy policy;
 	int quantum;
 	int runningProcess;
+	ArrayList<Integer> finished;
+	Thread robinThread;
+	static Boolean isDead;
+	SRTcomparator SRTComp;
+	
 	
 	Queue<Integer> processQueue;
 	Boolean running;
@@ -41,6 +49,16 @@ public class Scheduler {
 		this.quantum = quantum;
 		
 		this.running = false;
+		if(robinThread != null && robinThread.isAlive()){
+			
+			try {
+				isDead = true;
+				robinThread.join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		isDead = false;
 
 		/**
 		 * Add general initialization code here (if needed)
@@ -49,36 +67,28 @@ public class Scheduler {
 		switch(policy) {
 		case FCFS:	//First-come-first-served
 			System.out.println("Starting new scheduling task: First-come-first-served");
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
 			this.processQueue = new LinkedList<Integer>();
 			break;
 		case RR:	//Round robin
 			System.out.println("Starting new scheduling task: Round robin, quantum = " + quantum);
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
-			System.out.println("switch RR");
+			this.finished = new ArrayList<Integer>();
 			this.processQueue = new LinkedList<Integer>();
+			robinThread = new Thread(new RoundRobinController(this));
+			robinThread.start();
 			break;
 		case SPN:	//Shortest process next
 			System.out.println("Starting new scheduling task: Shortest process next");
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
+			Comparator<Integer> SPNcomparator = new SPNcomparator(this);
+			this.processQueue = new PriorityQueue<Integer>(20, SPNcomparator);
 			break;
 		case SRT:	//Shortest remaining time
 			System.out.println("Starting new scheduling task: Shortest remaining time");
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
+			SRTComp = new SRTcomparator(this);
+			this.processQueue = new PriorityQueue<Integer>(20, SRTComp);
 			break;
 		case HRRN:	//Highest response ratio next
-			System.out.println("Starting new scheduling task: Highest response ratio next");
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
+			Comparator<Integer> HRRNcomparator = new SPNcomparator(this);
+			this.processQueue = new PriorityQueue<Integer>(20, HRRNcomparator);
 			break;
 		case FB:	//Feedback
 			System.out.println("Starting new scheduling task: Feedback, quantum = " + quantum);
@@ -99,59 +109,65 @@ public class Scheduler {
 	 */
 	public void processAdded(int processID) {
 		System.out.println("Process added");
-		if(!this.running){
-			System.out.println("!this.running");
-			processExecution.switchToProcess(processID);
-			this.running = true;
-			this.runningProcess = processID;
-			if(this.policy == Policy.RR){
-				new Waiter(this).run();
-			}
-		}else{
-			processQueue.add(processID);
-		}
-		/**
-		 * Add scheduling code here
-		 */
-
-	}
-
-	public void switchProcess(Boolean pFinished) {
-		System.out.println("SwitchProcess");
-		if(processQueue.size() != 0){
-			if(!pFinished){
-				System.out.println("Adding old process back to queue");
-				int oldPID = this.runningProcess;
-				this.processQueue.add(oldPID);		
-			}
-			System.out.println("Queue not empty");
-			int newPID = this.processQueue.remove();
-			processExecution.switchToProcess(newPID);
-			this.runningProcess = newPID;
-			if(this.policy == Policy.RR){
-				//new Waiter(this).run();
-			}
-		}else{
-			System.out.println("Queue empty");
-			if(pFinished){
-				this.running = false;
-				
+		switch(policy){
+		case FCFS:
+		case SPN:
+		case HRRN:
+			if(!this.running){
+				processExecution.switchToProcess(processID);
+				this.running = true;
+				this.runningProcess = processID;
 			}else{
-				//new Waiter(this).run();
+				processQueue.add(processID);
 			}
+			break;
+		case RR:
+			break;
+		case SRT:
+			if(!this.running){
+				processExecution.switchToProcess(processID);
+				this.running = true;
+				this.runningProcess = processID;
+			}else{
+				System.out.println("Running process: " + runningProcess);
+				System.out.println("new process: " + processID);
+				if(SRTComp.compare(processID, runningProcess) == -1){
+					processQueue.add(runningProcess);
+					processExecution.switchToProcess(processID);
+					this.running = true;
+					this.runningProcess = processID;
+				}else{
+					processQueue.add(processID);
+				}
+			}
+		default:
+			break;
 		}
-		
+
 	}
 
 	/**
 	 * DO NOT CHANGE DEFINITION OF OPERATION
 	 */
 	public void processFinished(int processID) {
-
-		switchProcess(true);
-		/**
-		 * Add scheduling code here
-		 */
-
+		switch(policy){
+		case FCFS:
+		case SPN:
+		case SRT:
+		case HRRN:
+			if(processQueue.size() == 0){
+				this.running = false;
+			}else{
+				int newPID = processQueue.remove();
+				processExecution.switchToProcess(newPID);
+				this.runningProcess = newPID;
+			}
+			break;
+		case RR:
+			finished.add(processID);
+			break;
+		default:
+			break;
+		}
 	}
 }
