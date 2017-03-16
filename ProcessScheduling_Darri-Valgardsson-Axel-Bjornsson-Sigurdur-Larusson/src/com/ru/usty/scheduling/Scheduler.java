@@ -24,7 +24,7 @@ public class Scheduler {
 	 */
 	public Scheduler(ProcessExecution processExecution) {
 		this.processExecution = processExecution;
-
+		System.out.println("Scheduler constructor");
 		/**
 		 * Add general initialization code here (if needed)
 		 */
@@ -34,6 +34,8 @@ public class Scheduler {
 	 * DO NOT CHANGE DEFINITION OF OPERATION
 	 */
 	public void startScheduling(Policy policy, int quantum) {
+		
+		System.out.println("start scheduling");
 
 		this.policy = policy;
 		this.quantum = quantum;
@@ -57,6 +59,7 @@ public class Scheduler {
 			/**
 			 * Add your policy specific initialization code here (if needed)
 			 */
+			System.out.println("switch RR");
 			this.processQueue = new LinkedList<Integer>();
 			break;
 		case SPN:	//Shortest process next
@@ -95,12 +98,14 @@ public class Scheduler {
 	 * DO NOT CHANGE DEFINITION OF OPERATION
 	 */
 	public void processAdded(int processID) {
-		
+		System.out.println("Process added");
 		if(!this.running){
+			System.out.println("!this.running");
 			processExecution.switchToProcess(processID);
 			this.running = true;
+			this.runningProcess = processID;
 			if(this.policy == Policy.RR){
-				timer();
+				new Waiter(this).run();
 			}
 		}else{
 			processQueue.add(processID);
@@ -111,31 +116,29 @@ public class Scheduler {
 
 	}
 
-	private void timer() {
-		try {
-			Thread.sleep(this.quantum);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		switchProcess(false);
-		
-	}
-
-	private void switchProcess(Boolean pFinished) {
-		if(!pFinished){
-			int oldPID = this.runningProcess;
-			this.processQueue.add(oldPID);		
-		}
-		
+	public void switchProcess(Boolean pFinished) {
+		System.out.println("SwitchProcess");
 		if(processQueue.size() != 0){
+			if(!pFinished){
+				System.out.println("Adding old process back to queue");
+				int oldPID = this.runningProcess;
+				this.processQueue.add(oldPID);		
+			}
+			System.out.println("Queue not empty");
 			int newPID = this.processQueue.remove();
 			processExecution.switchToProcess(newPID);
 			this.runningProcess = newPID;
 			if(this.policy == Policy.RR){
-				timer();
+				//new Waiter(this).run();
 			}
 		}else{
-			this.running = false;
+			System.out.println("Queue empty");
+			if(pFinished){
+				this.running = false;
+				
+			}else{
+				//new Waiter(this).run();
+			}
 		}
 		
 	}
