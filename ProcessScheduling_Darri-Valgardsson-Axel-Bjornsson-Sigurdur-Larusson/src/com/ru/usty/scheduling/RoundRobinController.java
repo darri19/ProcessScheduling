@@ -14,7 +14,7 @@ public class RoundRobinController implements Runnable{
 		while(true){
 			if(!scheduler.processQueue.isEmpty()){
 				int process = scheduler.processQueue.remove();
-				scheduler.processExecution.switchToProcess(process);
+				scheduler.switchToProcess(process);
 				long startTime = System.currentTimeMillis();
 				while(!scheduler.finished.contains(process)){
 					if(System.currentTimeMillis()>startTime + scheduler.quantum){

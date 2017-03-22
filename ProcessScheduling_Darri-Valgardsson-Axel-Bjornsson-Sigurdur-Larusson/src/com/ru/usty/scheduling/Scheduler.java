@@ -2,25 +2,31 @@ package com.ru.usty.scheduling;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
 
 import com.ru.usty.scheduling.process.ProcessExecution;
+import com.ru.usty.scheduling.process.ProcessInfo;
 
 public class Scheduler {
 
+	static final int numOfFeedbackQueues = 7;
 	ProcessExecution processExecution;
 	Policy policy;
 	int quantum;
 	int runningProcess;
 	ArrayList<Integer> finished;
-	Thread robinThread;
+	Thread thread;
 	static Boolean isDead;
 	SRTcomparator SRTComp;
+	Map<Integer, ProcessTimeMeasurements> processTimes;
 	
 	
 	Queue<Integer> processQueue;
+	ArrayList<Queue<Integer>> feedbackQueue;
 	Boolean running;
 	/**
 	 * Add any objects and variables here (if needed)
@@ -32,38 +38,32 @@ public class Scheduler {
 	 */
 	public Scheduler(ProcessExecution processExecution) {
 		this.processExecution = processExecution;
-		System.out.println("Scheduler constructor");
-		/**
-		 * Add general initialization code here (if needed)
-		 */
 	}
 
 	/**
 	 * DO NOT CHANGE DEFINITION OF OPERATION
 	 */
 	public void startScheduling(Policy policy, int quantum) {
-		
-		System.out.println("start scheduling");
-
+		if(processTimes!=null){
+			printMeasurements();
+		}
 		this.policy = policy;
 		this.quantum = quantum;
 		
 		this.running = false;
-		if(robinThread != null && robinThread.isAlive()){
+		if(thread != null && thread.isAlive()){
 			
 			try {
 				isDead = true;
-				robinThread.join();
+				thread.join();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
 		}
 		isDead = false;
-
-		/**
-		 * Add general initialization code here (if needed)
-		 */
-
+		
+		this.processTimes = new HashMap<Integer, ProcessTimeMeasurements>();
+		
 		switch(policy) {
 		case FCFS:	//First-come-first-served
 			System.out.println("Starting new scheduling task: First-come-first-served");
@@ -73,8 +73,8 @@ public class Scheduler {
 			System.out.println("Starting new scheduling task: Round robin, quantum = " + quantum);
 			this.finished = new ArrayList<Integer>();
 			this.processQueue = new LinkedList<Integer>();
-			robinThread = new Thread(new RoundRobinController(this));
-			robinThread.start();
+			thread = new Thread(new RoundRobinController(this));
+			thread.start();
 			break;
 		case SPN:	//Shortest process next
 			System.out.println("Starting new scheduling task: Shortest process next");
@@ -87,14 +87,19 @@ public class Scheduler {
 			this.processQueue = new PriorityQueue<Integer>(20, SRTComp);
 			break;
 		case HRRN:	//Highest response ratio next
-			Comparator<Integer> HRRNcomparator = new SPNcomparator(this);
+			System.out.println("Starting new scheduling task: Highest response ratio next");
+			Comparator<Integer> HRRNcomparator = new HRRNcomparator(this);
 			this.processQueue = new PriorityQueue<Integer>(20, HRRNcomparator);
 			break;
 		case FB:	//Feedback
 			System.out.println("Starting new scheduling task: Feedback, quantum = " + quantum);
-			/**
-			 * Add your policy specific initialization code here (if needed)
-			 */
+			this.feedbackQueue = new ArrayList<Queue<Integer>>();
+			for(int i = 0; i<numOfFeedbackQueues; i++){
+				this.feedbackQueue.add(new LinkedList<Integer>());
+			}
+			this.finished = new ArrayList<Integer>();
+			thread = new Thread(new FeedbackController(this));
+			thread.start();
 			break;
 		}
 
@@ -108,13 +113,13 @@ public class Scheduler {
 	 * DO NOT CHANGE DEFINITION OF OPERATION
 	 */
 	public void processAdded(int processID) {
-		System.out.println("Process added");
+		this.processTimes.put(processID, new ProcessTimeMeasurements());
 		switch(policy){
 		case FCFS:
 		case SPN:
 		case HRRN:
 			if(!this.running){
-				processExecution.switchToProcess(processID);
+				switchToProcess(processID);
 				this.running = true;
 				this.runningProcess = processID;
 			}else{
@@ -122,28 +127,44 @@ public class Scheduler {
 			}
 			break;
 		case RR:
+			processQueue.add(processID);
 			break;
 		case SRT:
 			if(!this.running){
-				processExecution.switchToProcess(processID);
+				switchToProcess(processID);
 				this.running = true;
 				this.runningProcess = processID;
 			}else{
-				System.out.println("Running process: " + runningProcess);
-				System.out.println("new process: " + processID);
 				if(SRTComp.compare(processID, runningProcess) == -1){
 					processQueue.add(runningProcess);
-					processExecution.switchToProcess(processID);
+					switchToProcess(processID);
 					this.running = true;
 					this.runningProcess = processID;
 				}else{
 					processQueue.add(processID);
 				}
 			}
+			break;
+		case FB:
+			feedbackQueue.get(0).add(processID);
+			break;
 		default:
 			break;
 		}
 
+	}
+	
+	void switchToProcess(int processID) {
+		processExecution.switchToProcess(processID);
+		processTimes.get(processID).setStart();
+	}
+
+	long HRRNnumber(int PID){
+		ProcessInfo info = processExecution.getProcessInfo(PID);
+		long w = info.elapsedWaitingTime;
+		long s = info.totalServiceTime;
+		return (w+s)/s;
+		
 	}
 
 	/**
@@ -154,20 +175,46 @@ public class Scheduler {
 		case FCFS:
 		case SPN:
 		case SRT:
-		case HRRN:
 			if(processQueue.size() == 0){
 				this.running = false;
 			}else{
 				int newPID = processQueue.remove();
-				processExecution.switchToProcess(newPID);
+				switchToProcess(newPID);
 				this.runningProcess = newPID;
 			}
 			break;
 		case RR:
+		case FB:
 			finished.add(processID);
+			break;
+		case HRRN:
+			if(processQueue.size() == 0){
+				this.running = false;
+			}else{
+				
+				this.processQueue = new PriorityQueue<Integer>(this.processQueue);
+				int newPID = processQueue.remove();
+				switchToProcess(newPID);
+				this.runningProcess = newPID;
+			}
 			break;
 		default:
 			break;
 		}
+		processTimes.get(processID).setCompletion();
+		printMeasurements();
+	}
+	public void printMeasurements(){
+		long responseTimes = 0;
+		long turnaroundTimes = 0;
+		for(Map.Entry<Integer, ProcessTimeMeasurements> entry: processTimes.entrySet()){
+			responseTimes += entry.getValue().responseTime();
+			turnaroundTimes += entry.getValue().turnaroundTime();
+		}
+		responseTimes/=(long)processTimes.size();
+		turnaroundTimes/=(long)processTimes.size();
+
+		System.out.println("Average response time: " + responseTimes);
+		System.out.println("Average turnaround time: " + turnaroundTimes);
 	}
 }
